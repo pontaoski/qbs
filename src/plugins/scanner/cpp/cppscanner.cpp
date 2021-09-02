@@ -60,6 +60,8 @@ using namespace CPlusPlus;
 #include <QtCore/qlist.h>
 #include <QtCore/qstring.h>
 
+#include <QDebug>
+
 #include <cstring>
 #include <memory>
 
@@ -112,6 +114,10 @@ struct Opaq
     char *fileContent;
     FileType fileType;
     QList<ScanResult> includedFiles;
+    QString exportsModule;
+    QString belongsToModule;
+    QList<QString> importsPartitions;
+    QList<QString> importsModules;
     bool hasQObjectMacro;
     bool hasPluginMetaDataMacro;
     int currentResultIndex;
@@ -131,6 +137,13 @@ public:
         return static_cast<int>(tk.length()) == literal.size()
                 && memcmp(m_fileContent + tk.begin(), literal.data(), literal.size()) == 0;
     }
+
+    QString toString(const Token& tk) const
+    {
+        auto ptr = m_fileContent + tk.begin();
+        auto len = tk.length();
+        return QString::fromLocal8Bit(ptr, len);
+    }
 };
 
 static void scanCppFile(void *opaq, CPlusPlus::Lexer &yylex, bool scanForFileTags,
@@ -138,6 +151,8 @@ static void scanCppFile(void *opaq, CPlusPlus::Lexer &yylex, bool scanForFileTag
 {
     const QLatin1String includeLiteral("include");
     const QLatin1String importLiteral("import");
+    const QLatin1String exportLiteral("export");
+    const QLatin1String moduleLiteral("module");
     const QLatin1String defineLiteral("define");
     const QLatin1String qobjectLiteral("Q_OBJECT");
     const QLatin1String qgadgetLiteral("Q_GADGET");
@@ -151,7 +166,84 @@ static void scanCppFile(void *opaq, CPlusPlus::Lexer &yylex, bool scanForFileTag
 
     yylex(&tk);
 
+    auto stepLexer = [&]() mutable {
+        oldTk = tk;
+        yylex(&tk);
+    };
+
+    auto parseModule = [&]() mutable {
+        auto mod = tc.toString(tk);
+
+        while (tk.isNot(T_EOF_SYMBOL) && tk.isNot(T_SEMICOLON)) {
+            stepLexer();
+
+            if (tk.is(T_DOT)) {
+                stepLexer();
+
+                mod += QStringLiteral(".");
+                mod += tc.toString(tk);
+            } else if (tk.is(T_COLON)) {
+                stepLexer();
+
+                mod += QStringLiteral(":");
+                mod += tc.toString(tk);
+
+                break;
+            }
+        }
+
+        opaque->belongsToModule = mod;
+    };
+    auto parseImport = [&]() mutable {
+        if (tk.is(T_COLON)) {
+            stepLexer();
+
+            opaque->importsPartitions << tc.toString(tk);
+            return;
+        }
+
+        auto mod = tc.toString(tk);
+
+        while (tk.isNot(T_EOF_SYMBOL) && tk.isNot(T_SEMICOLON)) {
+            stepLexer();
+
+            if (tk.is(T_DOT)) {
+                stepLexer();
+
+                mod += QStringLiteral(".");
+                mod += tc.toString(tk);
+            }
+        }
+
+        opaque->importsModules << mod;
+    };
+
     while (tk.isNot(T_EOF_SYMBOL)) {
+        if (tk.newline() && tk.is(T_IDENTIFIER)) {
+            if (tc.equals(tk, moduleLiteral)) {
+                stepLexer();
+                parseModule();
+                continue;
+            } else if (tc.equals(tk, importLiteral)) {
+                stepLexer();
+                parseImport();
+                continue;
+            } else if (tc.equals(tk, exportLiteral)) {
+                stepLexer();
+
+                if (tc.equals(tk, moduleLiteral)) {
+                    stepLexer();
+                    parseModule();
+
+                    opaque->exportsModule = opaque->belongsToModule;
+                    continue;
+                } else if (tc.equals(tk, importLiteral)) {
+                    stepLexer();
+                    parseImport();
+                    continue;
+                }
+            }
+        }
         if (tk.newline() && tk.is(T_POUND)) {
             yylex(&tk);
 
@@ -196,8 +288,8 @@ static void scanCppFile(void *opaq, CPlusPlus::Lexer &yylex, bool scanForFileTag
             }
 
         }
-        oldTk = tk;
-        yylex(&tk);
+
+        stepLexer();
     }
 }
 
@@ -308,6 +400,35 @@ static const char **additionalFileTags(void *opaq, int *size)
     return nullptr;
 }
 
+static ModuleInformation cxxModuleInformation(void *opaq)
+{
+    auto opaque = static_cast<Opaq*>(opaq);
+
+    return ModuleInformation {
+        opaque->exportsModule,
+        opaque->belongsToModule,
+        opaque->importsPartitions,
+        opaque->importsModules,
+    };
+}
+
+static QStringList cxxDependsOnFiles(void *opaq)
+{
+    auto opaque = static_cast<Opaq*>(opaq);
+
+    QStringList it;
+    it.reserve(opaque->importsModules.length() + opaque->importsPartitions.length());
+
+    for (const auto& modu : opaque->importsModules) {
+        it << QStringLiteral("%1.cmi").arg(modu);
+    }
+    for (const auto& modu : opaque->importsPartitions) {
+        it << QStringLiteral("%1:%2.cmi").arg(opaque->belongsToModule).arg(modu);
+    }
+
+    return it;
+}
+
 ScannerPlugin includeScanner =
 {
     "include_scanner",
@@ -316,7 +437,9 @@ ScannerPlugin includeScanner =
     closeScanner,
     next,
     additionalFileTags,
-    ScannerUsesCppIncludePaths | ScannerRecursiveDependencies
+    ScannerUsesCppIncludePaths | ScannerRecursiveDependencies,
+    cxxModuleInformation,
+    cxxDependsOnFiles
 };
 
 ScannerPlugin *cppScanners[] = { &includeScanner, nullptr };

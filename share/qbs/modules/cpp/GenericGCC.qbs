@@ -81,6 +81,38 @@ CppModule {
                               objcopyName, stripName], toolchainPrefix)
     }
 
+    Rule {
+        name: "Cxx20ModulesRule_GenerateModuleInfo"
+        condition: useCxxModules
+        inputs: ["cpp"]
+
+        outputArtifacts: {
+            var artifacts = []
+            var moduleInformation = Cxx20ModulesScanner.scan(input)
+
+            if (moduleInformation.exportsModule) {
+                artifacts.push({
+                    "filePath": "cxx20modules" + moduleInformation.exportsModule + ".cmi",
+                    "fileTags": ["cpp-compiledmoduleinterface"],
+                })
+            }
+            if (moduleInformation.belongsToModule || moduleInformation.importsModules.length > 0) {
+                artifacts.push({
+                    "filePath": input.fileName + "-cxx20modules.modulemap",
+                    "fileTags": ["cpp-modulemap"],
+                })
+            }
+
+            return artifacts
+        }
+
+        outputFileTags: ["cpp-compiledmoduleinterface", "cpp-modulemap"]
+
+        prepare: {
+            return Gcc.prepareModules.apply(Gcc, arguments);
+        }
+    }
+
     targetLinkerFlags: Gcc.targetFlags("linker", false,
                                        target, targetArch, machineType, qbs.targetOS)
     targetAssemblerFlags: Gcc.targetFlags("assembler", assemblerHasTargetOption,
@@ -607,10 +639,10 @@ CppModule {
     }
 
     Rule {
-        name: "compiler"
+        name: "Cxx20ModulesRule_compiler"
         inputs: ["cpp", "c", "objcpp", "objc", "asm_cpp"]
         auxiliaryInputs: ["hpp"]
-        explicitlyDependsOn: ["c_pch", "cpp_pch", "objc_pch", "objcpp_pch"]
+        explicitlyDependsOn: ["c_pch", "cpp_pch", "objc_pch", "objcpp_pch", "cpp-compiledmoduleinterface", "cpp-modulemap"]
         outputFileTags: Cpp.compilerOutputTags(false).concat(["c_obj", "cpp_obj"])
         outputArtifacts: Cpp.compilerOutputArtifacts(input, inputs)
         prepare: Gcc.prepareCompiler.apply(Gcc, arguments)

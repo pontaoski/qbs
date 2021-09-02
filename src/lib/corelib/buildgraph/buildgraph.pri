@@ -26,6 +26,7 @@ SOURCES += \
     $$PWD/productinstaller.cpp \
     $$PWD/projectbuilddata.cpp \
     $$PWD/qtmocscanner.cpp \
+    $$PWD/cxxmodulesscanner.cpp \
     $$PWD/rawscanneddependency.cpp \
     $$PWD/rawscanresults.cpp \
     $$PWD/requestedartifacts.cpp \
@@ -67,6 +68,7 @@ HEADERS += \
     $$PWD/productinstaller.h \
     $$PWD/projectbuilddata.h \
     $$PWD/qtmocscanner.h \
+    $$cxxmodulesscanner.h \
     $$PWD/rawscanneddependency.h \
     $$PWD/rawscanresults.h \
     $$PWD/requestedartifacts.h \

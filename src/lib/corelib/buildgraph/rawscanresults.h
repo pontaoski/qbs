@@ -63,10 +63,14 @@ class RawScanResult
 public:
     std::vector<RawScannedDependency> deps;
     FileTags additionalFileTags;
+    QString exportsModule;
+    QString belongsToModule;
+    QList<QString> importsSubmodules;
+    QList<QString> importsModules;
 
     template<PersistentPool::OpType opType> void completeSerializationOp(PersistentPool &pool)
     {
-        pool.serializationOp<opType>(deps, additionalFileTags);
+        pool.serializationOp<opType>(deps, additionalFileTags, exportsModule, belongsToModule, importsSubmodules, importsModules);
     }
 };
 

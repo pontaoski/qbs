@@ -153,6 +153,8 @@ QbsLibrary {
             "projectbuilddata.h",
             "qtmocscanner.cpp",
             "qtmocscanner.h",
+            "cxxmodulesscanner.cpp",
+            "cxxmodulesscanner.h",
             "rawscanneddependency.cpp",
             "rawscanneddependency.h",
             "rawscanresults.cpp",

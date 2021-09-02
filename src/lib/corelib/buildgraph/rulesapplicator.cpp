@@ -44,6 +44,7 @@
 #include "productbuilddata.h"
 #include "projectbuilddata.h"
 #include "qtmocscanner.h"
+#include "cxxmodulesscanner.h"
 #include "rulecommands.h"
 #include "rulenode.h"
 #include "rulesevaluationcontext.h"
@@ -87,6 +88,7 @@ RulesApplicator::RulesApplicator(
     , m_productsByName(productsByName)
     , m_projectsByName(projectsByName)
     , m_mocScanner(nullptr)
+    , m_cxxModulesScanner(nullptr)
     , m_logger(std::move(logger))
 {
 }
@@ -94,6 +96,7 @@ RulesApplicator::RulesApplicator(
 RulesApplicator::~RulesApplicator()
 {
     delete m_mocScanner;
+    delete m_cxxModulesScanner;
 }
 
 void RulesApplicator::applyRule(RuleNode *ruleNode, const ArtifactSet &inputArtifacts,
@@ -114,6 +117,10 @@ void RulesApplicator::applyRule(RuleNode *ruleNode, const ArtifactSet &inputArti
     if (m_rule->name.startsWith(QLatin1String("QtCoreMocRule"))) {
         delete m_mocScanner;
         m_mocScanner = new QtMocScanner(m_product, scope());
+    }
+    if (m_rule->name.startsWith(QLatin1String("Cxx20ModulesRule"))) {
+        delete m_cxxModulesScanner;
+        m_cxxModulesScanner = new CxxModulesScanner(m_product, scope());
     }
     QScriptValue prepareScriptContext = engine()->newObject();
     prepareScriptContext.setPrototype(engine()->globalObject());

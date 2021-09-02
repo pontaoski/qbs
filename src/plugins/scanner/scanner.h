@@ -39,6 +39,8 @@
 #ifndef SCANNER_H
 #define SCANNER_H
 
+#include <QString>
+#include <QStringList>
 
 #ifdef __cplusplus
 extern "C" {
@@ -88,6 +90,22 @@ enum ScannerFlags
     ScannerRecursiveDependencies = 0x02
 };
 
+// module information for languages such as C++20 modules and FORTRAN
+struct ModuleInformation
+{
+  QString exportsModule;
+  QString belongsToModule;
+
+  // stuff like c++20 module partitions or fortran submodules
+  QList<QString> importsSubmodules;
+
+  QList<QString> importsModules;
+};
+
+using moduleInformation = ModuleInformation (*)(void *opaq);
+
+using dependsOnFiles = QStringList (*)(void *opaq);
+
 class ScannerPlugin
 {
 public:
@@ -98,6 +116,9 @@ public:
     scanNext_f  next;
     scanAdditionalFileTags_f additionalFileTags;
     int flags;
+
+    moduleInformation moduleInformation = nullptr;
+    dependsOnFiles dependsOnFiles = nullptr;
 };
 
 #ifdef __cplusplus

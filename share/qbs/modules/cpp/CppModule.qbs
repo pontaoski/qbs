@@ -62,6 +62,7 @@ Module {
     property bool useCxxPrecompiledHeader: true
     property bool useObjcPrecompiledHeader: true
     property bool useObjcxxPrecompiledHeader: true
+    property bool useCxxModules: false
 
     property bool treatSystemHeadersAsDependencies: false
 

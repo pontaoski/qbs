@@ -774,6 +774,8 @@ function compilerFlags(project, product, input, output, explicitlyDependsOn) {
         args.push('-Os');
     if (opt === 'none')
         args.push('-O0');
+    if (input.cpp.useCxxModules)
+        args.push('-fmodules-ts')
 
     var warnings = input.cpp.warningLevel
     if (warnings === 'none')
@@ -784,6 +786,11 @@ function compilerFlags(project, product, input, output, explicitlyDependsOn) {
     }
     if (input.cpp.treatWarningsAsErrors)
         args.push('-Werror');
+
+    var moduleInformation = Cxx20ModulesScanner.scan(input)
+    if (moduleInformation.belongsToModule || moduleInformation.importsModules.length > 0) {
+        args.push("-fmodule-mapper=" + product.buildDirectory + "/" + input.fileName + "-cxx20modules.modulemap")
+    }
 
     args = args.concat(configFlags(input));
 
@@ -1015,13 +1022,76 @@ function setResponseFileThreshold(command, product)
         command.responseFileThreshold = 10000;
 }
 
-function prepareCompiler(project, product, inputs, outputs, input, output, explicitlyDependsOn) {
+function prepareCMI(moduleInformation, cmi, project, product, inputs, outputs, input, output, explicitlyDependsOn) {
+    return prepareCompilerInternal(project, product, inputs, outputs, input, cmi, explicitlyDependsOn, true)
+}
+
+function prepareModuleMap(moduleInformation, mm, product) {
+    /**
+     * @type {{exportsModule: string, belongsToModule: string, importsSubmodules: string[], importsModules: string[]}}
+     */
+    var moduleInformation = moduleInformation
+
+    var generateModuleMap = new JavaScriptCommand()
+    generateModuleMap.outPath = mm.filePath
+    generateModuleMap.moduleInformation = moduleInformation
+    generateModuleMap.description = "generating module map for " + input.fileName
+    generateModuleMap.highlight = "filegen"
+    generateModuleMap.sourceCode = function() {
+        var content = ""
+        if (moduleInformation.belongsToModule) {
+            content = moduleInformation.belongsToModule + " " + product.buildDirectory + "/" + moduleInformation.belongsToModule + ".cmi\n"
+        }
+
+        for (var i = 0; i < moduleInformation.importsModules.length; i++) {
+            var modu = moduleInformation.importsModules[i]
+
+            content += modu + " " + product.buildDirectory + "/" + modu + ".cmi\n"
+        }
+
+        var file = new TextFile(outPath, TextFile.WriteOnly)
+        file.write(content)
+        file.close()
+    }
+
+    return generateModuleMap
+}
+
+function prepareModules(project, product, inputs, outputs, input, output, explicitlyDependsOn) {
+    /**
+     * @type {{exportsModule: string, belongsToModule: string, importsSubmodules: string[], importsModules: string[]}}
+     */
+    var moduleInformation = Cxx20ModulesScanner.scan(input)
+    for (var i = 0; i < moduleInformation.importsSubmodules.length; i++) {
+        var partition = moduleInformation.importsSubmodules[i]
+        moduleInformation.importsModules.push(moduleInformation.belongsToModule + ":" + partition)
+    }
+
+    var commands = []
+
+    var mm = outputs["cpp-modulemap"]
+    if (mm) {
+        commands.push(prepareModuleMap(moduleInformation, mm[0], product))
+    }
+
+    var cmi = outputs["cpp-compiledmoduleinterface"]
+    if (cmi) {
+        commands.push(prepareCMI(moduleInformation, cmi[0], project, product, inputs, outputs, input, output, explicitlyDependsOn))
+    }
+
+    return commands
+}
+
+function prepareCompilerInternal(project, product, inputs, outputs, input, output, explicitlyDependsOn, moduleOnly) {
     var compilerInfo = effectiveCompilerInfo(product.qbs.toolchain,
                                              input, output);
     var compilerPath = compilerInfo.path;
     var pchOutput = output.fileTags.contains(compilerInfo.tag + "_pch");
 
     var args = compilerFlags(project, product, input, output, explicitlyDependsOn);
+    if (moduleOnly) {
+        args.push("-fmodule-only")
+    }
     var wrapperArgsLength = 0;
     var wrapperArgs = product.cpp.compilerWrapper;
     var extraEnv;
@@ -1050,7 +1120,11 @@ function prepareCompiler(project, product, inputs, outputs, input, output, expli
     }
 
     var cmd = new Command(compilerPath, args);
-    cmd.description = (pchOutput ? 'pre' : '') + 'compiling ' + input.fileName;
+    if (moduleOnly) {
+        cmd.description = 'generating compiled module interface for ' + input.fileName;
+    } else {
+        cmd.description = (pchOutput ? 'pre' : '') + 'compiling ' + input.fileName;
+    }
     if (pchOutput)
         cmd.description += ' (' + compilerInfo.tag + ')';
     cmd.highlight = "compiler";
@@ -1062,6 +1136,10 @@ function prepareCompiler(project, product, inputs, outputs, input, output, expli
     cmd.responseFileUsagePrefix = '@';
     setResponseFileThreshold(cmd, product);
     return cmd;
+}
+
+function prepareCompiler(project, product, inputs, outputs, input, output, explicitlyDependsOn) {
+    return prepareCompilerInternal(project, product, inputs, outputs, input, output, explicitlyDependsOn)
 }
 
 // Concatenates two arrays of library names and preserves the dependency order that ld needs.

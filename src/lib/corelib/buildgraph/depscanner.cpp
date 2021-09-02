@@ -126,6 +126,15 @@ QStringList PluginDependencyScanner::collectDependencies(Artifact *artifact, Fil
         }
         result += outFilePath;
     }
+
+    if (m_plugin->dependsOnFiles) {
+        auto extra = m_plugin->dependsOnFiles(scannerHandle);
+
+        for (const auto& file : extra) {
+            result += artifact->product->buildDirectory() + QStringLiteral("/") + file;
+        }
+    }
+
     m_plugin->close(scannerHandle);
     return rangeTo<QStringList>(result);
 }
